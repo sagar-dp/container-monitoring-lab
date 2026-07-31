@@ -1,0 +1,101 @@
+version: "3.8"
+
+services:
+  # ---------------------------------------------------------------------
+  # Sample microservice under observation
+  # ---------------------------------------------------------------------
+  microservice:
+    build: ./app
+    container_name: microservice
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------
+  # Prometheus - scrapes and stores metrics from all targets
+  # ---------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - microservice
+      - cadvisor
+      - node-exporter
+
+  # ---------------------------------------------------------------------
+  # cAdvisor - exposes per-container resource usage metrics
+  # ---------------------------------------------------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------
+  # Node Exporter - exposes host machine resource usage metrics
+  # ---------------------------------------------------------------------
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: node-exporter
+    command:
+      - "--path.rootfs=/host"
+    volumes:
+      - /:/host:ro
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------
+  # Grafana - visualizes metrics stored in Prometheus
+  # ---------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
